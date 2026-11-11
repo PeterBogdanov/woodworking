@@ -1,0 +1,13 @@
+{
+ "fileFormatVersion": "1",
+ "parameterSets": {
+  "tray-3x2": {
+   "blank_x": "400", "blank_y": "300", "blank_thick": "22", "length": "360", "width": "260", "thick": "22",
+   "corner_r": "25", "rim_w": "18", "pocket_depth": "12", "n_x": "3", "n_y": "2", "divider_w": "10", "pocket_r": "14"
+  },
+  "tray-1x1": {
+   "blank_x": "300", "blank_y": "220", "blank_thick": "20", "length": "260", "width": "180", "thick": "20",
+   "corner_r": "30", "rim_w": "20", "pocket_depth": "10", "n_x": "1", "n_y": "1", "divider_w": "10", "pocket_r": "20"
+  }
+ }
+}

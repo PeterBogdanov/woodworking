@@ -1,0 +1,7 @@
+{
+  "field": [200, 200],
+  "z_safe": 5.0,
+  "z_link": 5.0,
+  "tabs": {"count": 2, "len": 20, "h": 5, "ramp": 2},
+  "profile_extra": 0.5
+}

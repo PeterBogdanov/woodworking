@@ -1,0 +1,19 @@
+{
+ "fileFormatVersion": "1",
+ "parameterSets": {
+  "boardcam": {
+   "blank_size": "430",
+   "blank_thick": "25",
+   "board_dia": "394",
+   "thick": "25",
+   "pocket_depth": "10.5",
+   "rim_w": "16",
+   "n_pockets": "4",
+   "layout": "spiral",
+   "sweep_deg": "88",
+   "hub_r": "31",
+   "wall_w": "15.5",
+   "corner_f": "11.5"
+  }
+ }
+}

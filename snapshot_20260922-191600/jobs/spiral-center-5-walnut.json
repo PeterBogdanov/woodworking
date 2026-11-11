@@ -1,0 +1,11 @@
+{
+ "schema": 1,
+ "name": "spiral-center-5-walnut",
+ "shape": "pinwheel",
+ "preset": "spiral-center-5",
+ "overrides": {},
+ "material": "walnut",
+ "tools": {},
+ "options": {"flatten": "auto", "profile_mode": "auto"},
+ "notes": ""
+}

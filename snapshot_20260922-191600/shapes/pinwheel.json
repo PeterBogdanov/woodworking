@@ -1,0 +1,25 @@
+{
+ "fileFormatVersion": "1",
+ "parameterSets": {
+  "spiral-3": {
+   "blank_size": "430", "blank_thick": "25", "board_dia": "406.4", "thick": "25", "pocket_depth": "12",
+   "rim_w": "25", "n_pockets": "3", "layout": "spiral", "sweep_deg": "200", "hub_r": "30",
+   "wall_w": "12", "corner_f": "14"
+  },
+  "spiral-center-5": {
+   "blank_size": "430", "blank_thick": "25", "board_dia": "406.4", "thick": "25", "pocket_depth": "12",
+   "rim_w": "25", "n_pockets": "5", "layout": "spiral_center", "sweep_deg": "160", "hub_r": "30",
+   "wall_w": "12", "corner_f": "14"
+  },
+  "sectors-4": {
+   "blank_size": "430", "blank_thick": "25", "board_dia": "406.4", "thick": "25", "pocket_depth": "12",
+   "rim_w": "25", "n_pockets": "4", "layout": "sectors", "sweep_deg": "0", "hub_r": "30",
+   "wall_w": "12", "corner_f": "14"
+  },
+  "committed-4": {
+   "blank_size": "430", "blank_thick": "25", "board_dia": "394", "thick": "25", "pocket_depth": "10.5",
+   "rim_w": "16", "n_pockets": "4", "layout": "spiral", "sweep_deg": "88", "hub_r": "31",
+   "wall_w": "15.5", "corner_f": "11.5"
+  }
+ }
+}

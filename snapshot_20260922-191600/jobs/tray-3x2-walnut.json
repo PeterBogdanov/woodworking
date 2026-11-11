@@ -1,0 +1,11 @@
+{
+ "schema": 1,
+ "name": "tray-3x2-walnut",
+ "shape": "tray",
+ "preset": "tray-3x2",
+ "overrides": {},
+ "material": "walnut",
+ "tools": {},
+ "options": {"flatten": "auto", "profile_mode": "auto"},
+ "notes": "первая некруглая фигура: контур - скруглённый прямоугольник, переворот вокруг оси X"
+}
