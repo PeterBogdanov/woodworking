@@ -37,8 +37,13 @@ def header_lines(title, tool, ctx):
     L.append("(" + "=" * 68 + ")")
     L.append("G21 G17 G90 G94")
     L.append("G54")
+    L.append("G0 Z" + _fnum(ctx["z_safe"]))
+    router_name = ctx.get("router", "Makita RT0701C")
+    dial_val = tool.get("dial", 0.0)
+    L.append("( MSG: ПРОВЕРЬТЕ ШПИНДЕЛЬ: %s ДИСК ~%.1f, S%d )" % (router_name, dial_val, tool["rpm"]))
     L.append("M05")
     L.append("S%d M03" % tool["rpm"])
+    L.append("G4 P3.0 (ПАУЗА 3 СЕК НА РАСКРУТКУ ШПИНДЕЛЯ)")
     L.append("G0 Z" + _fnum(ctx["z_safe"]))
     return L
 
