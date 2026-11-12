@@ -29,6 +29,7 @@ import json
 import os
 import re
 import sys
+import time
 import traceback
 import urllib.parse
 
@@ -139,6 +140,10 @@ def make_handler(root):
                 return self._plan()
             if method == "POST" and parts == ["api", "generate"]:
                 return self._generate()
+            if method == "POST" and parts == ["api", "surface"]:
+                return self._surface()
+            if method == "GET" and parts == ["api", "surface", "download"]:
+                return self._surface_download()
             if method == "GET" and parts[:2] == ["api", "runs"]:
                 return self._runs(parts[2:])
             if method == "GET" and parts[:1] == ["runs"] and len(parts) in (4, 5):
@@ -282,6 +287,82 @@ def make_handler(root):
             return self._json({"ok": res.ok, "verdict": res.verdict, "report": res.report, "files": files,
                                "run": {"job": job["name"], "stamp": res.stamp, "url": base},
                                "plan": plan.to_dict()})
+
+        def _surface(self):
+            from .surface import generate, _Blank
+            from .post.masso import render
+            body = self._body()
+            try:
+                width = float(body.get("width", 200.0))
+                height = float(body.get("height", 200.0))
+                depth = float(body.get("depth", 1.0))
+                step = float(body.get("step", 0.5))
+                overlap = float(body.get("overlap", 0.4))
+            except (ValueError, TypeError) as e:
+                raise ApiError(400, "Некорректные параметры: %s" % e)
+
+            lib = self._lib()
+            tools = lib.tools
+            tool_id = body.get("tool")
+            tool = None
+            if tool_id:
+                for t in tools:
+                    if t.get("id") == tool_id:
+                        tool = t
+                        break
+            if not tool:
+                surf_tools = [t for t in tools if "surface" in t.get("roles", [])]
+                tool = surf_tools[0] if surf_tools else (tools[0] if tools else None)
+            if not tool:
+                tool = {"id": "dummy", "name": "12mm flat endmill", "dia": 12.0, "shank": 12.0,
+                        "rpm": 18000, "feed": 2000, "plunge": 500, "ramp": 800}
+
+            machine = lib.machine
+            gcode, z_safe = generate(width, height, depth, step, overlap, tool, machine)
+            blank = _Blank(width, height, depth)
+            ctx = {
+                "z_safe": z_safe,
+                "blank": blank,
+                "machine": machine,
+                "shape": "surface",
+                "preset": None,
+                "job": "surface",
+                "stamp": time.strftime("%Y%m%d-%H%M%S"),
+                "zero": "X0 Y0 = ЛЕВЫЙ БЛИЖНИЙ УГОЛ заготовки, Z0 = верх",
+                "openscad_version": "-",
+                "material": "-",
+            }
+            title = "Торцовка %.0f x %.0f мм, глубина %.1f мм" % (width, height, depth)
+            nc_text = render(title, tool, ctx, gcode)
+
+            os.makedirs(out_dir, exist_ok=True)
+            out_file = os.path.join(out_dir, "surface.nc")
+            with open(out_file, "w", encoding="utf-8") as f:
+                f.write(nc_text)
+
+            preview_lines = nc_text.splitlines()[:60]
+            return self._json({
+                "ok": True,
+                "filename": "surface.nc",
+                "lines": len(nc_text.splitlines()),
+                "size_bytes": len(nc_text.encode("utf-8")),
+                "tool": tool["name"],
+                "download_url": "/api/surface/download",
+                "preview": "\n".join(preview_lines)
+            })
+
+        def _surface_download(self):
+            out_file = os.path.join(out_dir, "surface.nc")
+            if not os.path.isfile(out_file):
+                raise ApiError(404, "surface.nc ещё не сгенерирован")
+            with open(out_file, "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="surface.nc"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
 
         def _runs(self, rest):
             if not rest:

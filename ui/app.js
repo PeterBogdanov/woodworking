@@ -97,6 +97,7 @@ function showTab(name) {
   $all('main > section').forEach(function (s) { s.hidden = (s.id !== 'tab-' + name); });
   if (name === 'runs') loadRuns();
   if (name === 'library') loadLibrary();
+  if (name === 'surface') loadSurfaceTools();
 }
 
 /* ---------- doctor ---------- */
@@ -914,11 +915,60 @@ function initRuns() {
   $('#runs-refresh').addEventListener('click', loadRuns);
 }
 
+/* ---------- торцовка ---------- */
+function loadSurfaceTools() {
+  var sel = $('#surf-tool');
+  if (!sel) return;
+  clear(sel);
+  var tools = (state.library && state.library.tools) || [];
+  tools.forEach(function (t) {
+    var isSurf = (t.roles || []).indexOf('surface') >= 0;
+    var opt = h('option', { value: t.id }, t.name + ' (D' + t.dia + ' мм' + (isSurf ? ' — торцовочная' : '') + ')');
+    if (isSurf) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function initSurface() {
+  var btn = $('#surf-generate');
+  if (!btn) return;
+  btn.addEventListener('click', async function () {
+    var err = $('#surf-error');
+    var status = $('#surf-status');
+    var resCard = $('#surf-result-card');
+    setErr(err, '');
+    status.textContent = 'Генерация траектории...';
+    btn.disabled = true;
+    try {
+      var payload = {
+        width: parseFloat($('#surf-width').value) || 200,
+        height: parseFloat($('#surf-height').value) || 300,
+        depth: parseFloat($('#surf-depth').value) || 1.5,
+        step: parseFloat($('#surf-step').value) || 0.5,
+        overlap: parseFloat($('#surf-overlap').value) || 0.4,
+        tool: $('#surf-tool').value
+      };
+      var res = await api('POST', '/api/surface', payload);
+      status.textContent = 'Готово!';
+      resCard.hidden = false;
+      $('#surf-summary').textContent = 'Фреза: ' + res.tool + ' | Строк G-code: ' + res.lines + ' (' + kb(res.size_bytes) + ')';
+      $('#surf-preview').textContent = res.preview + '\n...';
+      $('#surf-download').setAttribute('href', res.download_url);
+    } catch (e) {
+      setErr(err, 'Ошибка генерации: ' + e.message);
+      status.textContent = '';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 /* ---------- старт ---------- */
 async function init() {
   $all('.tab').forEach(function (b) { b.addEventListener('click', function () { showTab(b.getAttribute('data-tab')); }); });
-  initJobs(); initLibrary(); initRuns();
+  initJobs(); initLibrary(); initRuns(); initSurface();
   await Promise.all([loadDoctor(), loadShapes(), loadLibrary()]);
+  loadSurfaceTools();
   await loadJobs();
 }
 document.addEventListener('DOMContentLoaded', function () {

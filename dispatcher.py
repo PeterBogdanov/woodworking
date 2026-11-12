@@ -22,6 +22,24 @@ import urllib.request
 import urllib.error
 
 # ── Конфиг ──────────────────────────────────────────────────────────────────
+def _load_env_fallback():
+    for fpath in [os.path.expanduser("~/.zshrc"), os.path.expanduser("~/.bashrc")]:
+        if os.path.exists(fpath):
+            try:
+                with open(fpath, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("export DEEPSEEK_API_KEY=") and not os.getenv("DEEPSEEK_API_KEY"):
+                            v = line.split("=", 1)[1].strip("'\" ")
+                            os.environ["DEEPSEEK_API_KEY"] = v
+                        if line.startswith("export OLLAMA_HOST=") and not os.getenv("OLLAMA_HOST"):
+                            v = line.split("=", 1)[1].strip("'\" ")
+                            os.environ["OLLAMA_HOST"] = v
+            except Exception:
+                pass
+
+_load_env_fallback()
+
 OLLAMA_HOST  = os.getenv("OLLAMA_HOST", "http://dst-1600g-dst01.tail8aa093.ts.net:11434")
 OLLAMA_MODEL = "qwen3-coder:30b"
 
