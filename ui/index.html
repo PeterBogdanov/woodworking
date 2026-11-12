@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>boardcam</title>
+<link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">boardcam <span class="ver">{{VERSION}}</span></div>
+  <nav class="tabs">
+    <button type="button" class="tab active" data-tab="jobs">Задания</button>
+    <button type="button" class="tab" data-tab="library">Библиотека</button>
+    <button type="button" class="tab" data-tab="runs">Прогоны</button>
+  </nav>
+</header>
+<div id="doctor-banner" class="banner bad" hidden></div>
+<div id="global-error" class="errline" style="padding:6px 16px" hidden></div>
+
+<main>
+
+<!-- ===== Задания ===== -->
+<section id="tab-jobs">
+  <div class="cols">
+    <div class="col">
+      <div class="card">
+        <div class="card-head">
+          <h2>Задания</h2>
+          <button type="button" id="job-new" class="btn">Новое задание</button>
+        </div>
+        <div id="job-list" class="list"></div>
+        <div id="jobs-error" class="errline" hidden></div>
+      </div>
+
+      <div class="card" id="job-editor" hidden>
+        <div class="card-head"><h2 id="job-editor-title">Задание</h2></div>
+        <div class="grid2">
+          <label>Имя
+            <input id="job-name" type="text" autocomplete="off" spellcheck="false" placeholder="board_01" pattern="[A-Za-z0-9_.-]+">
+            <small class="hint">латиница, цифры, «_», «.», «-»</small>
+          </label>
+          <label>Форма <select id="job-shape"></select></label>
+          <label>Набор параметров <select id="job-preset"></select></label>
+          <label>Материал
+            <select id="job-material"></select>
+            <small id="material-hint" class="hint"></small>
+          </label>
+        </div>
+
+        <h3>Параметры формы</h3>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th>Параметр</th><th>Из набора</th><th>Переопределение</th><th></th></tr></thead>
+            <tbody id="job-overrides"></tbody>
+          </table>
+        </div>
+
+        <h3>Фрезы</h3>
+        <div id="job-tools" class="grid2"></div>
+
+        <h3>Опции</h3>
+        <div class="grid2">
+          <label>Выравнивание заготовки (flatten)
+            <select id="job-flatten">
+              <option value="auto">автоматически</option>
+              <option value="on">включено</option>
+              <option value="off">выключено</option>
+            </select>
+          </label>
+          <label>Обрезка контура (profile_mode)
+            <select id="job-profile">
+              <option value="auto">автоматически</option>
+              <option value="full">без переворота (full)</option>
+              <option value="flip">с переворотом (flip)</option>
+            </select>
+          </label>
+        </div>
+
+        <label>Заметки <textarea id="job-notes" rows="3"></textarea></label>
+
+        <div class="btns">
+          <button type="button" id="job-save" class="btn primary">Сохранить</button>
+          <button type="button" id="job-delete" class="btn danger">Удалить</button>
+          <button type="button" id="job-plan" class="btn">План</button>
+          <button type="button" id="job-generate" class="btn">Сгенерировать G-code</button>
+          <span id="job-status" class="status"></span>
+        </div>
+        <div id="job-confirm" class="confirm" hidden></div>
+        <div id="job-error" class="errline" hidden></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card" id="preview-card" hidden>
+        <h2>Вид сверху</h2>
+        <div class="preview">
+          <img id="job-preview" alt="Вид сверху">
+          <span id="preview-spin" class="spin" hidden></span>
+        </div>
+        <div id="preview-error" class="errline" hidden></div>
+      </div>
+
+      <div class="card" id="plan-panel" hidden>
+        <h2>План</h2>
+        <div id="plan-body"></div>
+      </div>
+
+      <div class="card" id="gen-panel" hidden>
+        <h2>Генерация</h2>
+        <div id="gen-body"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Библиотека ===== -->
+<section id="tab-library" hidden>
+  <div id="library-error" class="errline" hidden></div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-head">
+      <h2>Фрезы</h2>
+      <button type="button" id="tool-add" class="btn">Добавить фрезу</button>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>id</th><th>Название</th><th>Тип</th><th>Ø</th><th>R</th><th>loc</th><th>Роли</th><th>Обороты</th><th>Подача</th></tr></thead>
+        <tbody id="tools-body"></tbody>
+      </table>
+    </div>
+    <div id="tool-form" hidden></div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-head">
+      <h2>Материалы</h2>
+      <button type="button" id="material-add" class="btn">Добавить материал</button>
+    </div>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <thead><tr><th>id</th><th>Название</th><th>Янка</th><th>feed_scale</th><th>Обороты</th><th>Диск</th><th>Эталон</th></tr></thead>
+        <tbody id="materials-body"></tbody>
+      </table>
+    </div>
+    <div id="material-form" hidden></div>
+  </div>
+
+  <div class="card">
+    <h2>Станок</h2>
+    <textarea id="machine-json" class="mono" rows="14" spellcheck="false"></textarea>
+    <div class="btns">
+      <button type="button" id="machine-save" class="btn primary">Сохранить</button>
+      <span id="machine-status" class="status"></span>
+    </div>
+    <div id="machine-error" class="errline" hidden></div>
+  </div>
+</section>
+
+<!-- ===== Прогоны ===== -->
+<section id="tab-runs" hidden>
+  <div class="cols">
+    <div class="col">
+      <div class="card">
+        <div class="card-head">
+          <h2>Прогоны</h2>
+          <button type="button" id="runs-refresh" class="btn">Обновить</button>
+        </div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th>Задание</th><th>Штамп</th><th>Форма/набор</th><th>Итог</th><th>Время</th></tr></thead>
+            <tbody id="runs-body"></tbody>
+          </table>
+        </div>
+        <div id="runs-error" class="errline" hidden></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card" id="run-detail" hidden>
+        <div class="card-head"><h2 id="run-title">Прогон</h2></div>
+        <div id="run-body"></div>
+        <div id="run-error" class="errline" hidden></div>
+        <div id="run-viewer" class="viewer-wrap" hidden>
+          <div id="run-layers" class="layers"></div>
+          <canvas id="run-canvas"></canvas>
+          <small class="hint">ЛКМ — вращение, колесо — масштаб, ПКМ или Shift+ЛКМ — сдвиг, двойной клик — вписать</small>
+          <div id="viewer-error" class="errline" hidden></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+<script src="/ui/viewer.js"></script>
+<script src="/ui/app.js"></script>
+</body>
+</html>

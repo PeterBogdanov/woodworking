@@ -1,0 +1,11 @@
+{
+ "schema": 1,
+ "name": "sectors-4-maple",
+ "shape": "pinwheel",
+ "preset": "sectors-4",
+ "overrides": {},
+ "material": "maple",
+ "tools": {},
+ "options": {"flatten": "auto", "profile_mode": "auto"},
+ "notes": ""
+}

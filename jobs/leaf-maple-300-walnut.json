@@ -1,0 +1,11 @@
+{
+ "schema": 1,
+ "name": "leaf-maple-300-walnut",
+ "shape": "leaf",
+ "preset": "maple-300",
+ "overrides": {},
+ "material": "walnut",
+ "tools": {},
+ "options": {"flatten": "auto", "profile_mode": "auto"},
+ "notes": "кленовый лист 300 мм, один отсек по форме листа; отверстие для подвеса не делается"
+}
