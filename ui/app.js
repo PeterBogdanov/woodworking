@@ -98,6 +98,7 @@ function showTab(name) {
   if (name === 'runs') loadRuns();
   if (name === 'library') loadLibrary();
   if (name === 'surface') loadSurfaceTools();
+  if (name === 'sketch') loadSketchModels();
 }
 
 /* ---------- doctor ---------- */
@@ -963,13 +964,327 @@ function initSurface() {
   });
 }
 
+/* ---------- скетч и мониторинг OpenSCAD ---------- */
+var sketchState = {
+  imageDataUrl: null,
+  currentShape: null,
+  currentMtime: 0,
+  models: []
+};
+
+async function loadSketchModels() {
+  var sel = $('#sketch-model');
+  if (!sel) return;
+  try {
+    var models = await api('GET', '/api/sketch/models');
+    sketchState.models = models || [];
+    clear(sel);
+    if (!sketchState.models.length) {
+      sel.appendChild(h('option', { value: '', text: 'Модели не найдены (проверьте Ollama)' }));
+      return;
+    }
+    sketchState.models.forEach(function (m) {
+      var opt = h('option', { value: m.id, text: m.name + (m.provider === 'ollama' ? ' [локально]' : ' [API]') });
+      if (m.is_default) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    console.error('Ошибка загрузки моделей скетча:', e);
+  }
+}
+
+function initSketch() {
+  var dropzone = $('#sketch-dropzone');
+  var fileInput = $('#sketch-file-input');
+  var promptEl = $('#sketch-drop-prompt');
+  var previewWrap = $('#sketch-preview-wrap');
+  var imgPreview = $('#sketch-img-preview');
+  var clearBtn = $('#sketch-clear-file');
+  var refreshBtn = $('#sketch-refresh-models');
+  var submitBtn = $('#sketch-submit');
+  var openBtn = $('#sketch-btn-open');
+  var jobBtn = $('#sketch-btn-job');
+  var jobFromSketch = $('#job-from-sketch');
+  var nameInput = $('#sketch-name');
+  var errLine = $('#sketch-error');
+  var statusSpan = $('#sketch-status');
+  var resCard = $('#sketch-result-card');
+  var codeView = $('#sketch-code-view');
+  var watcherBadge = $('#sketch-watcher-badge');
+
+  if (!dropzone) return;
+
+  function resetImage() {
+    sketchState.imageDataUrl = null;
+    fileInput.value = '';
+    promptEl.hidden = false;
+    previewWrap.hidden = true;
+    submitBtn.disabled = true;
+    setErr(errLine, '');
+  }
+
+  function handleImageFile(file) {
+    if (!file || !file.type.match(/^image\//)) {
+      setErr(errLine, 'Пожалуйста, выберите файл изображения (JPG, PNG, WebP)');
+      return;
+    }
+    setErr(errLine, '');
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var rawUrl = e.target.result;
+      var img = new Image();
+      img.onload = function () {
+        var maxDim = 1600;
+        var w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+          var scale = Math.min(maxDim / w, maxDim / h);
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+          var canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          sketchState.imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        } else {
+          sketchState.imageDataUrl = rawUrl;
+        }
+        imgPreview.src = sketchState.imageDataUrl;
+        promptEl.hidden = true;
+        previewWrap.hidden = false;
+        submitBtn.disabled = false;
+        if (!nameInput.value.trim()) {
+          var now = new Date();
+          var stamp = now.getFullYear() +
+            String(now.getMonth() + 1).padStart(2, '0') +
+            String(now.getDate()).padStart(2, '0') + '_' +
+            String(now.getHours()).padStart(2, '0') +
+            String(now.getMinutes()).padStart(2, '0');
+          nameInput.value = 'sketch_' + stamp;
+        }
+      };
+      img.src = rawUrl;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  dropzone.addEventListener('click', function (e) {
+    if (e.target !== clearBtn && !clearBtn.contains(e.target)) {
+      fileInput.click();
+    }
+  });
+
+  fileInput.addEventListener('change', function () {
+    if (fileInput.files && fileInput.files[0]) {
+      handleImageFile(fileInput.files[0]);
+    }
+  });
+
+  dropzone.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    dropzone.classList.add('dragover');
+  });
+
+  dropzone.addEventListener('dragleave', function () {
+    dropzone.classList.remove('dragover');
+  });
+
+  dropzone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleImageFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  // Вставка из буфера обмена (Cmd+V / Ctrl+V)
+  window.addEventListener('paste', function (e) {
+    var items = (e.clipboardData || e.originalEvent.clipboardData || {}).items;
+    if (!items) return;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') === 0) {
+        var file = items[i].getAsFile();
+        if (file) {
+          showTab('sketch');
+          handleImageFile(file);
+          break;
+        }
+      }
+    }
+  });
+
+  clearBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    resetImage();
+  });
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', function () {
+      loadSketchModels();
+    });
+  }
+
+  submitBtn.addEventListener('click', async function () {
+    if (!sketchState.imageDataUrl) {
+      setErr(errLine, 'Сначала выберите или вставьте фото эскиза');
+      return;
+    }
+    var shapeName = nameInput.value.trim();
+    if (!shapeName || !NAME_RE.test(shapeName)) {
+      setErr(errLine, 'Укажите корректное имя формы (латиница, цифры, _, -, .)');
+      return;
+    }
+    var modelSel = $('#sketch-model');
+    var modelId = modelSel ? modelSel.value : '';
+    var autoOpen = $('#sketch-auto-open').checked;
+    var autoJob = $('#sketch-auto-job').checked;
+
+    setErr(errLine, '');
+    submitBtn.disabled = true;
+    clear(statusSpan);
+    statusSpan.appendChild(spinner('Распознавание эскиза в OpenSCAD...'));
+
+    try {
+      var res = await api('POST', '/api/sketch/process', {
+        image: sketchState.imageDataUrl,
+        name: shapeName,
+        model: modelId,
+        open_scad: autoOpen
+      });
+
+      sketchState.currentShape = res.name;
+      sketchState.currentMtime = res.mtime;
+
+      resCard.hidden = false;
+      $('#sketch-result-title').textContent = 'OpenSCAD: shapes/' + res.name + '.scad';
+      codeView.textContent = res.code;
+      watcherBadge.style.display = 'inline-flex';
+
+      clear(statusSpan);
+      statusSpan.textContent = 'Успешно создано!' + (res.openscad_opened ? ' (OpenSCAD запущен)' : '');
+
+      // Перечитываем формы, чтобы новая фигура сразу появилась везде
+      await loadShapes();
+
+      if (autoJob) {
+        createJobFromShape(res.name);
+      }
+    } catch (e) {
+      clear(statusSpan);
+      setErr(errLine, 'Ошибка обработки: ' + e.message);
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  if (openBtn) {
+    openBtn.addEventListener('click', async function () {
+      if (!sketchState.currentShape) return;
+      try {
+        await api('POST', '/api/sketch/open', { name: sketchState.currentShape });
+      } catch (e) {
+        setErr(errLine, 'Не удалось открыть OpenSCAD: ' + e.message);
+      }
+    });
+  }
+
+  if (jobBtn) {
+    jobBtn.addEventListener('click', function () {
+      if (!sketchState.currentShape) return;
+      createJobFromShape(sketchState.currentShape);
+    });
+  }
+
+  if (jobFromSketch) {
+    jobFromSketch.addEventListener('click', function () {
+      showTab('sketch');
+    });
+  }
+}
+
+function createJobFromShape(shapeName) {
+  newJob();
+  state.job.shape = shapeName;
+  state.job.name = shapeName + '-job';
+  var s = findShape(shapeName);
+  var presets = s && s.presets ? Object.keys(s.presets) : [];
+  state.job.preset = presets[0] || '';
+  state.job.overrides = {};
+  fillEditor();
+  showTab('jobs');
+}
+
+/* ---------- фоновый мониторинг изменений файлов shapes/ ---------- */
+function startShapeWatcher() {
+  var lastMtimes = {};
+
+  setInterval(async function () {
+    try {
+      var res = await api('GET', '/api/shapes/mtime');
+      var shapes = res.shapes || {};
+      var hasChanges = false;
+      var changedNames = [];
+
+      Object.keys(shapes).forEach(function (name) {
+        if (lastMtimes[name] !== undefined && lastMtimes[name] !== shapes[name]) {
+          hasChanges = true;
+          changedNames.push(name);
+        }
+        lastMtimes[name] = shapes[name];
+      });
+
+      // Проверяем удалённые или новые
+      if (Object.keys(shapes).length !== Object.keys(lastMtimes).length) {
+        hasChanges = true;
+      }
+
+      if (hasChanges) {
+        await loadShapes();
+
+        // Если открыт редактор заданий и изменена текущая форма
+        if (state.job && changedNames.indexOf(state.job.shape) >= 0) {
+          schedulePreview();
+        }
+
+        // Если в редакторе заданий открыт список форм — обновляем выпадающий список
+        var shapeSel = $('#job-shape');
+        if (shapeSel) {
+          var curVal = shapeSel.value;
+          clear(shapeSel);
+          state.shapes.forEach(function (s) {
+            shapeSel.appendChild(h('option', { value: s.name, text: s.name }));
+          });
+          shapeSel.value = curVal;
+        }
+
+        // Если изменена форма, открытая во вкладке скетча
+        if (sketchState.currentShape && changedNames.indexOf(sketchState.currentShape) >= 0) {
+          try {
+            var info = await api('GET', '/api/shapes/mtime?name=' + enc(sketchState.currentShape) + '&code=1');
+            if (info && info.code) {
+              $('#sketch-code-view').textContent = info.code;
+            }
+            var wb = $('#sketch-watcher-badge');
+            if (wb) {
+              wb.textContent = 'Обновлено из OpenSCAD (' + new Date().toLocaleTimeString() + ')';
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {
+      // сетевые паузы не крашат UI
+    }
+  }, 2000);
+}
+
 /* ---------- старт ---------- */
 async function init() {
   $all('.tab').forEach(function (b) { b.addEventListener('click', function () { showTab(b.getAttribute('data-tab')); }); });
-  initJobs(); initLibrary(); initRuns(); initSurface();
+  initJobs(); initLibrary(); initRuns(); initSurface(); initSketch();
   await Promise.all([loadDoctor(), loadShapes(), loadLibrary()]);
   loadSurfaceTools();
   await loadJobs();
+  startShapeWatcher();
 }
 document.addEventListener('DOMContentLoaded', function () {
   init().catch(function (e) { setErr($('#global-error'), 'Ошибка запуска: ' + e.message); });

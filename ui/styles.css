@@ -175,3 +175,34 @@ ul.files li { margin: 2px 0; }
 .verdict-ok { color: var(--ok); font-weight: 600; }
 .verdict-bad { color: var(--bad); font-weight: 600; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+
+/* дропзона скетча */
+.dropzone {
+  border: 2px dashed var(--border); border-radius: 8px; padding: 24px 16px;
+  text-align: center; cursor: pointer; transition: all .15s ease-in-out;
+  background: var(--pre-bg); outline: none;
+}
+.dropzone:hover, .dropzone.dragover {
+  border-color: var(--accent); background: var(--hover);
+}
+.drop-icon { font-size: 32px; margin-bottom: 6px; }
+.drop-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.drop-sub { font-size: 12px; color: var(--muted); }
+#sketch-img-preview {
+  max-width: 100%; max-height: 280px; object-fit: contain;
+  border-radius: 6px; border: 1px solid var(--border); background: #fff;
+}
+.badge-watcher {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px;
+  background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok);
+  border-radius: 4px; font-size: 12px; font-weight: 500; margin-top: 8px;
+}
+.live-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--ok);
+  display: inline-block; animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0% { transform: scale(0.95); opacity: 0.7; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.7; }
+}

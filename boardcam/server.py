@@ -33,6 +33,24 @@ import time
 import traceback
 import urllib.parse
 
+def _load_env_fallback():
+    for fpath in [os.path.expanduser("~/.zshrc"), os.path.expanduser("~/.bashrc")]:
+        if os.path.exists(fpath):
+            try:
+                with open(fpath, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("export DEEPSEEK_API_KEY=") and not os.getenv("DEEPSEEK_API_KEY"):
+                            v = line.split("=", 1)[1].strip("'\" ")
+                            os.environ["DEEPSEEK_API_KEY"] = v
+                        if line.startswith("export OLLAMA_HOST=") and not os.getenv("OLLAMA_HOST"):
+                            v = line.split("=", 1)[1].strip("'\" ")
+                            os.environ["OLLAMA_HOST"] = v
+            except Exception:
+                pass
+
+_load_env_fallback()
+
 from . import VERSION
 from .library import store
 from .jobs import jobfile
@@ -84,7 +102,7 @@ def make_handler(root):
 
         def _body(self):
             n = int(self.headers.get("Content-Length") or 0)
-            if n > 4 * 1024 * 1024:
+            if n > 30 * 1024 * 1024:
                 raise ApiError(413, "слишком большое тело запроса")
             raw = self.rfile.read(n) if n else b""
             if not raw:
@@ -134,6 +152,14 @@ def make_handler(root):
                 return self._library(method, parts[2:])
             if method == "GET" and parts == ["api", "shapes"]:
                 return self._json(self._shapes())
+            if method == "GET" and parts == ["api", "shapes", "mtime"]:
+                return self._shapes_mtime(q)
+            if method == "GET" and parts == ["api", "sketch", "models"]:
+                return self._sketch_models()
+            if method == "POST" and parts == ["api", "sketch", "process"]:
+                return self._sketch_process()
+            if method == "POST" and parts == ["api", "sketch", "open"]:
+                return self._sketch_open()
             if parts[:2] == ["api", "jobs"]:
                 return self._jobs(method, parts[2:])
             if method == "POST" and parts == ["api", "plan"]:
@@ -198,11 +224,112 @@ def make_handler(root):
                 if not fn.endswith(".scad"):
                     continue
                 name = fn[:-5]
-                params = [{"name": n, "default": d, "values": v} for n, d, v in customizer_params(os.path.join(shapes_dir, fn))]
+                full_p = os.path.join(shapes_dir, fn)
+                try:
+                    mtime = os.path.getmtime(full_p)
+                except OSError:
+                    mtime = 0
+                params = [{"name": n, "default": d, "values": v} for n, d, v in customizer_params(full_p)]
                 out.append({"name": name, "file": "shapes/" + fn,
+                            "mtime": mtime,
                             "presets": runner.read_presets(os.path.join(shapes_dir, name + ".json")),
                             "params": params})
             return out
+
+        def _get_ollama_host(self):
+            return os.getenv("OLLAMA_HOST", "http://dst-1600g-dst01.tail8aa093.ts.net:11434")
+
+        def _get_deepseek_key(self):
+            return os.getenv("DEEPSEEK_API_KEY", "")
+
+        def _shapes_mtime(self, q):
+            from . import sketch
+            if "name" in q:
+                name = q["name"].strip()
+                if not SAFE.match(name):
+                    raise ApiError(400, "некорректное имя формы")
+                info = sketch.get_shape_info(name, shapes_dir)
+                if q.get("code") == "1" and info.get("exists"):
+                    p = os.path.join(shapes_dir, name + ".scad")
+                    try:
+                        with io.open(p, encoding="utf-8") as f:
+                            info["code"] = f.read()
+                    except Exception as e:
+                        info["code_error"] = str(e)
+                return self._json(info)
+            m = {}
+            if os.path.isdir(shapes_dir):
+                for fn in os.listdir(shapes_dir):
+                    if fn.endswith(".scad"):
+                        fp = os.path.join(shapes_dir, fn)
+                        try:
+                            m[fn[:-5]] = os.path.getmtime(fp)
+                        except OSError:
+                            pass
+            return self._json({"shapes": m})
+
+        def _sketch_models(self):
+            from . import sketch
+            host = self._get_ollama_host()
+            key = self._get_deepseek_key()
+            return self._json(sketch.get_available_models(host, key))
+
+        def _sketch_process(self):
+            from . import sketch
+            b = self._body()
+            img = b.get("image")
+            if not img:
+                raise ApiError(400, "отсутствует изображение эскиза")
+            name = (b.get("name") or ("sketch_" + time.strftime("%Y%m%d_%H%M%S"))).strip()
+            if not SAFE.match(name):
+                raise ApiError(400, "некорректное имя формы (допустимы латиница, цифры, _, -, .)")
+            model = b.get("model") or "hf.co/mradermacher/DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic-GGUF:Q4_K_M"
+            open_scad = bool(b.get("open_scad", True))
+            prompt = b.get("prompt")
+            host = self._get_ollama_host()
+            key = self._get_deepseek_key()
+
+            try:
+                raw_code = sketch.call_vision(img, prompt, model, host, key)
+            except Exception as e:
+                raise ApiError(500, "ошибка распознавания скетча: %s" % e)
+
+            code = sketch.clean_scad_code(raw_code)
+            os.makedirs(shapes_dir, exist_ok=True)
+            scad_path = os.path.join(shapes_dir, name + ".scad")
+            with io.open(scad_path, "w", encoding="utf-8") as f:
+                f.write(code + "\n")
+
+            json_path = os.path.join(shapes_dir, name + ".json")
+            if not os.path.isfile(json_path):
+                with io.open(json_path, "w", encoding="utf-8") as f:
+                    f.write("{}\n")
+
+            scad_opened = False
+            if open_scad:
+                scad_opened = sketch.open_in_openscad(scad_path)
+
+            st = os.stat(scad_path)
+            return self._json({
+                "ok": True,
+                "name": name,
+                "file": "shapes/" + name + ".scad",
+                "code": code,
+                "mtime": st.st_mtime,
+                "openscad_opened": scad_opened
+            })
+
+        def _sketch_open(self):
+            from . import sketch
+            b = self._body()
+            name = (b.get("name") or "").strip()
+            if not SAFE.match(name):
+                raise ApiError(400, "некорректное имя формы")
+            p = os.path.join(shapes_dir, name + ".scad")
+            if not os.path.isfile(p):
+                raise ApiError(404, "файл формы не найден")
+            opened = sketch.open_in_openscad(p)
+            return self._json({"ok": True, "opened": opened})
 
         def _library(self, method, rest):
             lib = self._lib()

@@ -11,6 +11,7 @@
   <div class="brand">boardcam <span class="ver">{{VERSION}}</span></div>
   <nav class="tabs">
     <button type="button" class="tab active" data-tab="jobs">Задания</button>
+    <button type="button" class="tab" data-tab="sketch">Скетч</button>
     <button type="button" class="tab" data-tab="surface">Торцовка</button>
     <button type="button" class="tab" data-tab="library">Библиотека</button>
     <button type="button" class="tab" data-tab="runs">Прогоны</button>
@@ -28,7 +29,10 @@
       <div class="card">
         <div class="card-head">
           <h2>Задания</h2>
-          <button type="button" id="job-new" class="btn">Новое задание</button>
+          <div style="display:flex; gap:8px">
+            <button type="button" id="job-new" class="btn">Новое задание</button>
+            <button type="button" id="job-from-sketch" class="btn">+ Из скетча</button>
+          </div>
         </div>
         <div id="job-list" class="list"></div>
         <div id="jobs-error" class="errline" hidden></div>
@@ -110,6 +114,81 @@
       <div class="card" id="gen-panel" hidden>
         <h2>Генерация</h2>
         <div id="gen-body"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Скетч ===== -->
+<section id="tab-sketch" hidden>
+  <div class="cols">
+    <div class="col">
+      <div class="card">
+        <div class="card-head">
+          <h2>Загрузка эскиза</h2>
+          <button type="button" id="sketch-refresh-models" class="btn" title="Обновить список моделей">Обновить модели</button>
+        </div>
+
+        <div id="sketch-dropzone" class="dropzone" tabindex="0">
+          <input type="file" id="sketch-file-input" accept="image/*" hidden>
+          <div id="sketch-drop-prompt">
+            <div class="drop-icon">📷</div>
+            <div class="drop-title">Перетащите фото скетча сюда</div>
+            <div class="drop-sub">или нажмите для выбора файла, либо вставьте из буфера (Cmd+V)</div>
+          </div>
+          <div id="sketch-preview-wrap" hidden>
+            <img id="sketch-img-preview" alt="Превью скетча">
+            <div style="margin-top:8px">
+              <button type="button" id="sketch-clear-file" class="btn">Выбрать другое фото</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid2" style="margin-top:16px">
+          <label>Имя формы
+            <input id="sketch-name" type="text" autocomplete="off" spellcheck="false" placeholder="sketch_tray" pattern="[A-Za-z0-9_.-]+">
+            <small class="hint">сохраняется в shapes/&lt;имя&gt;.scad</small>
+          </label>
+          <label>Vision-модель
+            <select id="sketch-model"></select>
+            <small id="sketch-model-hint" class="hint">Локальная Ollama или DeepSeek</small>
+          </label>
+        </div>
+
+        <div style="margin-top:12px; display:flex; flex-direction:column; gap:8px">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
+            <input type="checkbox" id="sketch-auto-open" checked>
+            <span>Открыть в OpenSCAD сразу после распознавания</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
+            <input type="checkbox" id="sketch-auto-job" checked>
+            <span>Сразу перейти в «Задания» после готовности</span>
+          </label>
+        </div>
+
+        <div class="btns" style="margin-top:16px">
+          <button type="button" id="sketch-submit" class="btn primary" disabled>Распознать и сгенерировать SCAD</button>
+          <span id="sketch-status" class="status"></span>
+        </div>
+        <div id="sketch-error" class="errline" hidden></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card" id="sketch-result-card" hidden>
+        <div class="card-head">
+          <h2 id="sketch-result-title">OpenSCAD модель</h2>
+          <div style="display:flex; gap:8px">
+            <button type="button" id="sketch-btn-open" class="btn">Открыть в OpenSCAD</button>
+            <button type="button" id="sketch-btn-job" class="btn primary">Создать задание</button>
+          </div>
+        </div>
+        <div id="sketch-watcher-badge" class="badge-watcher" style="display:none">
+          <span class="live-dot"></span> Мониторинг OpenSCAD активен: сохраняйте в OpenSCAD (Cmd+S) для авто-обновления
+        </div>
+        <div class="tbl-wrap" style="margin-top:12px">
+          <pre id="sketch-code-view" class="mono" style="background:var(--bg-code, #181818); color:#ddd; padding:12px; border-radius:4px; max-height:480px; overflow:auto; font-size:12px; font-family:monospace; line-height:1.4"></pre>
+        </div>
       </div>
     </div>
   </div>
