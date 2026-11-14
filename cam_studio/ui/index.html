@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CamStudio — Next-Gen Wood CNC CAM</title>
+  <link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="logo-icon">🪵</span>
+      <h1>CamStudio <span class="tag">Woodworking 2.0</span></h1>
+    </div>
+    <div class="header-badges">
+      <span class="badge">Masso G3 Touch</span>
+      <span class="badge">Makita RT0701C</span>
+      <span class="badge highlight">Grain-Aware</span>
+      <span class="badge highlight">Helical Ramp</span>
+      <span class="badge highlight">3D Tabs</span>
+    </div>
+  </header>
+
+  <main class="studio-layout">
+    <!-- Левая панель параметров -->
+    <aside class="sidebar">
+      <div class="panel-section">
+        <h2>1. Заготовка и древесина</h2>
+        <div class="form-grid">
+          <label>Порода дерева
+            <select id="stock-material">
+              <option value="walnut" selected>Американский орех (Janka 1010)</option>
+              <option value="maple">Сахарный клен (Janka 1450)</option>
+              <option value="oak">Белый дуб (Janka 1290)</option>
+              <option value="ash">Ясень (Janka 1320)</option>
+              <option value="cherry">Вишня (Janka 950)</option>
+              <option value="pine">Сосна (Janka 420)</option>
+            </select>
+          </label>
+
+          <div class="row3">
+            <label>X (мм)<input type="number" id="stock-w" value="300" min="50" max="1000"></label>
+            <label>Y (мм)<input type="number" id="stock-h" value="200" min="50" max="800"></label>
+            <label>Z (мм)<input type="number" id="stock-thick" value="22" min="5" max="80"></label>
+          </div>
+        </div>
+
+        <div class="grain-box">
+          <div class="grain-header">
+            <span>Направление волокон древесины</span>
+            <span id="grain-deg-display" class="val-badge">0°</span>
+          </div>
+          <input type="range" id="grain-angle" min="0" max="180" value="0" step="5">
+          <div class="grain-visual">
+            <div id="grain-arrow" class="grain-line"></div>
+            <small class="hint">Траектории чистовой выборки будут ориентированы строго по волокнам для устранения вырывов (tear-out)</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h2>2. Инструмент и режимы (Chip Load)</h2>
+        <div class="form-grid">
+          <div class="row2">
+            <label>Диаметр (мм)
+              <input type="number" id="tool-dia" value="6.35" step="0.05">
+            </label>
+            <label>Зубьев (Z)
+              <input type="number" id="tool-flutes" value="2" min="1" max="4">
+            </label>
+          </div>
+
+          <div class="row2">
+            <label>Обороты (RPM)
+              <input type="number" id="tool-rpm" value="18000" step="500">
+            </label>
+            <label>Глубина за проход (мм)
+              <input type="number" id="tool-stepdown" value="3.5" step="0.5">
+            </label>
+          </div>
+        </div>
+
+        <!-- Живой калькулятор стружки и Makita dial -->
+        <div id="chipload-card" class="calc-card">
+          <div class="calc-row">
+            <span>Толщина стружки (Chip Load):</span>
+            <strong id="res-chipload">0.082 мм/зуб</strong>
+          </div>
+          <div class="calc-row">
+            <span>Рабочая подача (Feed):</span>
+            <strong id="res-feed">2950 мм/мин</strong>
+          </div>
+          <div class="calc-row">
+            <span>Диск Makita RT0701C:</span>
+            <span id="res-makita" class="makita-badge">Колесико ~3 (17-18k)</span>
+          </div>
+          <div id="res-risk" class="status-ok">Обороты и подача сбалансированы (без прижога)</div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h2>3. Премиальные CAM-технологии</h2>
+        <div class="options-list">
+          <label class="check-label">
+            <input type="checkbox" id="opt-climb" checked>
+            <div>
+              <strong>Попутное фрезерование (Climb Milling)</strong>
+              <small>Срезание стружки от толстой части к тонкой. Предотвращает задиры древесины на боковых стенках.</small>
+            </div>
+          </label>
+
+          <label class="check-label">
+            <input type="checkbox" id="opt-helical" checked>
+            <div>
+              <strong>Спиральное врезание (Helical Ramp)</strong>
+              <small>Плавный винтовой вход (G2 со спиральным шагом Z) вместо удара вниз. Исключает прижог древесины в центре фрезы.</small>
+            </div>
+          </label>
+
+          <label class="check-label">
+            <input type="checkbox" id="opt-3dtabs" checked>
+            <div>
+              <strong>Плавные 3D треугольные мостики (Ramp Tabs)</strong>
+              <small>Подъем по Z на полной скорости без остановки станка. Никаких ступенек на готовой доске.</small>
+            </div>
+          </label>
+        </div>
+
+        <button type="button" id="btn-generate" class="btn primary full-w">Сгенерировать High-End G-code</button>
+      </div>
+    </aside>
+
+    <!-- Центральная область: 3D симулятор и G-код -->
+    <section class="main-workspace">
+      <div class="view-header">
+        <div class="tabs-sub">
+          <button type="button" class="tab-btn active" data-view="3d">3D Траектории (WebGL)</button>
+          <button type="button" class="tab-btn" data-view="gcode">G-code (Masso G3)</button>
+        </div>
+        <div class="view-actions">
+          <span id="gen-stats" class="hint">Готово к генерации</span>
+          <a id="btn-download" href="/api/download" class="btn secondary" download="camstudio_job.nc" style="display:none">Скачать .NC файл</a>
+        </div>
+      </div>
+
+      <!-- 3D Canvas -->
+      <div id="view-3d-wrap" class="canvas-container">
+        <canvas id="cam-canvas"></canvas>
+        <div class="canvas-legend">
+          <span class="legend-item"><span class="color-dot cut"></span> Проходы вдоль волокон (Climb Cut)</span>
+          <span class="legend-item"><span class="color-dot ramp"></span> Спиральный вход (Helical Ramp)</span>
+          <span class="legend-item"><span class="color-dot tabs"></span> 3D Треугольные мостики (Tabs)</span>
+          <span class="legend-item"><span class="color-dot rapid"></span> Безопасный отвод (G0 Safe)</span>
+        </div>
+      </div>
+
+      <!-- G-code Viewer -->
+      <div id="view-gcode-wrap" class="code-container" style="display:none">
+        <pre id="gcode-display" class="gcode-pre"></pre>
+      </div>
+    </section>
+  </main>
+
+  <script src="/ui/app.js"></script>
+</body>
+</html>
