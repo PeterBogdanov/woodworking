@@ -185,12 +185,14 @@ def cmd_sweep(args):
 
 def cmd_serve(args):
     from .server import serve
-    return serve(_root(args), args.port)
+    port = getattr(args, "opt_port", None) or getattr(args, "port", None) or 8000
+    return serve(_root(args), port)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="boardcam", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", help="корень проекта (где shapes/, data/, jobs/, out/)")
+    ap.add_argument("--port", dest="opt_port", type=int, help="порт сервера (по умолчанию 8000)")
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("doctor")
     b = sub.add_parser("build")
@@ -218,6 +220,7 @@ def main(argv=None):
     s.add_argument("--budget", type=float, default=2.0, help="секунд на построение одного варианта")
     v = sub.add_parser("serve")
     v.add_argument("port", nargs="?", type=int, default=8000)
+    v.add_argument("--port", dest="opt_port", type=int, help="порт сервера (по умолчанию 8000)")
     args = ap.parse_args(argv)
     if not args.cmd:
         ap.print_help()
