@@ -65,7 +65,7 @@ def _clean_b64(b64_str: str) -> str:
 
 
 def get_available_models(ollama_host: str, deepseek_api_key: str = "") -> list:
-    """Возвращает список доступных vision-моделей (Ollama + DeepSeek API)."""
+    """Возвращает список доступных моделей (Ollama + DeepSeek API), с флагом vision."""
     models = []
     
     # 1. Опрос Ollama
@@ -79,36 +79,39 @@ def get_available_models(ollama_host: str, deepseek_api_key: str = "") -> list:
                 caps = m.get("capabilities", []) or m.get("details", {}).get("capabilities", [])
                 low = name.lower()
                 is_vision = "vision" in caps or any(k in low for k in ("vl", "vision", "minicpm", "qwen3.5"))
-                if is_vision:
-                    # красивое отображение имени
-                    display = name
-                    if "qwen2.5vl" in low or "qwen2.5-vl" in low:
-                        display = f"Qwen 2.5 VL ({name})"
-                    elif "deepseek-v4-pro" in low:
-                        display = f"DeepSeek V4 Pro Vision (локально)"
-                    models.append({
-                        "id": name,
-                        "name": display,
-                        "provider": "ollama",
-                        "is_default": False
-                    })
+                # красивое отображение имени
+                display = name
+                if "qwen2.5vl" in low or "qwen2.5-vl" in low:
+                    display = f"Qwen 2.5 VL ({name})"
+                elif "deepseek-v4-pro" in low:
+                    display = f"DeepSeek V4 Pro 9B (локальная копия)"
+                models.append({
+                    "id": name,
+                    "name": display,
+                    "provider": "ollama",
+                    "remote": False,
+                    "vision": is_vision,
+                    "is_default": False
+                })
     except Exception as e:
         print(f"[boardcam.sketch] ошибка опроса Ollama: {e}", file=sys.stderr)
 
-    # 2. DeepSeek API
+    # 2. DeepSeek API (удалённый)
     if deepseek_api_key:
         models.append({
             "id": "deepseek-flash",
-            "name": "DeepSeek Flash (API)",
+            "name": "DeepSeek Flash (удалённый)",
             "provider": "deepseek",
+            "remote": True,
             "is_default": False
         })
 
-    # Если есть qwen2.5vl или deepseek local, делаем первой/дефолтной
+    # Сортировка: vision-модели первыми (qwen2.5vl → deepseek-v4-pro → ollama → remote), не-vision в конец
     if models:
-        # отдаём приоритет qwen2.5vl, затем deepseek-v4-pro
         def _score(m):
             low = m["id"].lower()
+            if m.get("vision") is False:
+                return 100
             if "qwen2.5vl" in low or "qwen2.5-vl" in low:
                 return 0
             if "deepseek-v4-pro" in low:
@@ -150,6 +153,8 @@ def call_vision(image_base64: str, prompt: str, model_name: str, ollama_host: st
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=180) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+            u = data.get("usage") or {}
+            print(f"[DeepSeek] токены: prompt={u.get('prompt_tokens')}, completion={u.get('completion_tokens')}, всего={u.get('total_tokens')}", flush=True)
             return data["choices"][0]["message"]["content"]
     else:
         # Локальная Ollama через /api/chat
@@ -169,6 +174,8 @@ def call_vision(image_base64: str, prompt: str, model_name: str, ollama_host: st
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=300) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+            pc, ec = data.get("prompt_eval_count"), data.get("eval_count")
+            print(f"[Ollama] токены: prompt={pc}, completion={ec}, всего={(pc or 0) + (ec or 0)}", flush=True)
             return data.get("message", {}).get("content", "")
 
 

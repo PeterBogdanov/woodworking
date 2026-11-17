@@ -416,7 +416,7 @@ def make_handler(root):
                                "plan": plan.to_dict()})
 
         def _surface(self):
-            from .surface import generate, _Blank
+            from .surface import generate, _Blank, surface_preview_svg
             from .post.masso import render
             body = self._body()
             try:
@@ -446,6 +446,10 @@ def make_handler(root):
 
             machine = lib.machine
             gcode, z_safe = generate(width, height, depth, step, overlap, tool, machine)
+            svg = surface_preview_svg(width, height, gcode.segs, tool)
+            svg_file = os.path.join(out_dir, "surface.preview.svg")
+            with open(svg_file, "w", encoding="utf-8") as f:
+                f.write(svg)
             blank = _Blank(width, height, depth)
             ctx = {
                 "z_safe": z_safe,
@@ -474,6 +478,7 @@ def make_handler(root):
                 "lines": len(nc_text.splitlines()),
                 "size_bytes": len(nc_text.encode("utf-8")),
                 "tool": tool["name"],
+                "preview_svg": svg,
                 "download_url": "/api/surface/download",
                 "preview": "\n".join(preview_lines)
             })

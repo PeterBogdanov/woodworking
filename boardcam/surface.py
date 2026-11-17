@@ -13,7 +13,7 @@
   --depth   мм  — сколько срезать                 [обязательно]
   --step    мм  — глубина за один проход  (0.5)
   --overlap доля от диаметра, перекрытие строк (0.4)
-  --tool    id  — фреза из data/tools.json (если не задан — первая в списке)
+  --tool    id  — фреза из data/tools.json (если не задан — первая с ролью surface)
   --out     путь к .nc файлу  (out/surface.nc)
 """
 
@@ -57,7 +57,8 @@ def _get_tool(tools, tool_id):
                 "dia": 12.0, "shank": 12.0,
                 "rpm": 18000, "feed": 2000, "plunge": 500, "ramp": 800}
     if not tool_id:
-        return tools[0]
+        surface = [t for t in tools if "surface" in t.get("roles", [])]
+        return (surface or tools)[0]
     for t in tools:
         if t.get("id") == tool_id:
             return t
@@ -138,6 +139,41 @@ def generate(width, height, depth, step, overlap, tool, machine):
     return g, z_safe
 
 
+def surface_preview_svg(width, height, segs, tool):
+    """SVG-превью торцовки: заготовка + траектория фрезы (режущие ходы)."""
+    w = float(width)
+    h = float(height)
+    scale = min(760.0 / max(w, 1.0), 520.0 / max(h, 1.0))
+    scale = max(scale, 0.02)
+    pad = 30.0
+    W = w * scale + 2 * pad
+    H = h * scale + 2 * pad
+
+    def T(x, y):
+        return (pad + x * scale, pad + (h - y) * scale)
+
+    o = [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="%.0f" height="%.0f" viewBox="0 0 %.0f %.0f">' % (W, H, W, H),
+        '<rect width="100%" height="100%" fill="#f7f2e8"/>',
+        '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="none" stroke="#999" stroke-dasharray="6,4"/>'
+        % (pad, pad, w * scale, h * scale),
+    ]
+    d = []
+    for (x0, y0), (x1, y1) in segs:
+        px0, py0 = T(x0, y0)
+        px1, py1 = T(x1, y1)
+        d.append("M%.2f,%.2f L%.2f,%.2f" % (px0, py0, px1, py1))
+    if d:
+        o.append('<path d="%s" fill="none" stroke="#888" stroke-width="1.2" opacity="0.85"/>' % " ".join(d))
+    o.append('<text x="12" y="20" font-family="monospace" font-size="13" fill="#222">'
+             'Торцовка %s — фреза D%.1f мм, %d режущих ходов</text>'
+             % (tool.get("name", ""), float(tool.get("dia", 0.0)), len(d)))
+    o.append('<text x="12" y="38" font-family="monospace" font-size="11" fill="#666">'
+             'X0Y0 = левый ближний угол (внизу слева), ход змейкой слева направо</text>')
+    o.append('</svg>')
+    return "\n".join(o)
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -198,6 +234,11 @@ def main():
 
     lines = nc_text.count("\n")
     print("Записано: %s  (%d строк G-code)" % (out, lines))
+
+    svg_out = os.path.splitext(out)[0] + ".preview.svg"
+    with open(svg_out, "w", encoding="utf-8") as f:
+        f.write(surface_preview_svg(args.width, args.height, gcode.segs, tool))
+    print("Превью:   %s" % svg_out)
 
 
 if __name__ == "__main__":

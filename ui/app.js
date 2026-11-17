@@ -953,6 +953,13 @@ function initSurface() {
       status.textContent = 'Готово!';
       resCard.hidden = false;
       $('#surf-summary').textContent = 'Фреза: ' + res.tool + ' | Строк G-code: ' + res.lines + ' (' + kb(res.size_bytes) + ')';
+      var img = $('#surf-preview-img');
+      if (img && res.preview_svg) {
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(res.preview_svg);
+        img.hidden = false;
+      } else if (img) {
+        img.hidden = true;
+      }
       $('#surf-preview').textContent = res.preview + '\n...';
       $('#surf-download').setAttribute('href', res.download_url);
     } catch (e) {
@@ -984,7 +991,12 @@ async function loadSketchModels() {
       return;
     }
     sketchState.models.forEach(function (m) {
-      var opt = h('option', { value: m.id, text: m.name + (m.provider === 'ollama' ? ' [локально]' : ' [API]') });
+      var isRemote = m.remote === true || m.provider === 'deepseek';
+      var isVision = m.vision !== false;
+      var tag = isRemote ? ' [удалённо]' : ' [локально]';
+      if (!isVision) tag += ' · НЕ vision';
+      var opt = h('option', { value: m.id, text: m.name + tag });
+      if (!isVision) opt.disabled = true;
       if (m.is_default) opt.selected = true;
       sel.appendChild(opt);
     });

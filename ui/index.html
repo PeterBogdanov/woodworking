@@ -151,7 +151,7 @@
           </label>
           <label>Vision-модель
             <select id="sketch-model"></select>
-            <small id="sketch-model-hint" class="hint">Локальная Ollama или DeepSeek</small>
+            <small id="sketch-model-hint" class="hint">Ollama — локально · DeepSeek — удалённо</small>
           </label>
         </div>
 
@@ -316,6 +316,7 @@
           <a id="surf-download" href="/api/surface/download" class="btn" download="surface.nc">Скачать surface.nc</a>
         </div>
         <div id="surf-summary" style="margin-bottom:8px; font-weight:500;"></div>
+        <img id="surf-preview-img" alt="Траектория фрезы" style="max-width:100%; border:1px solid #ccc; border-radius:4px; margin-bottom:8px;" hidden>
         <div class="tbl-wrap">
           <pre id="surf-preview" style="background:var(--bg-code, #181818); color:#ddd; padding:12px; border-radius:4px; max-height:400px; overflow:auto; font-size:12px; font-family:monospace; line-height:1.4"></pre>
         </div>

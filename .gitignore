@@ -1,6 +1,13 @@
+# Python
 __pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS / Dropbox
 .DS_Store
-out/.cache/
-out/*.nc
-out/*.txt
-out/*.nc
+*conflicted copy*
+
+# Сгенерированное и архивы
+out/
+snapshot_20260922-191600/

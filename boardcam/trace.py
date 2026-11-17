@@ -6,6 +6,7 @@ LLM читает только надписи и размеры.
 """
 
 from dataclasses import dataclass, field
+import base64
 import json
 import math
 import mimetypes
@@ -801,19 +802,61 @@ Rules:
 """
 
 
-def call_llm_for_spec(image_path: str, api_key: Optional[str] = None) -> SketchSpec:
-    """Вызов DeepSeek-flash для чтения размеров и текстовых меток эскиза."""
+# Локальная vision-модель (Ollama). Значения по умолчанию совпадают с AGENT.md / dispatcher.py.
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://dst-1600g-dst01.tail8aa093.ts.net:11434")
+OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "qwen2.5vl:7b")
+
+
+def _read_image_b64(image_path: str) -> Tuple[str, str]:
+    mime = mimetypes.guess_type(image_path)[0] or "image/jpeg"
+    with open(image_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode()
+    return mime, b64
+
+
+def _spec_from_content(content: str) -> SketchSpec:
+    """Парсит сырой ответ LLM (JSON) в SketchSpec; бросает исключение при ошибке."""
+    content = re.sub(r"^```[a-zA-Z]*\s*", "", content.strip())
+    content = re.sub(r"\s*```$", "", content)
+
+    data = json.loads(content)
+    parsed = LLMSketchSpec.model_validate(data)
+
+    # Перевод дюймов в мм если нужно
+    mult = 25.4 if parsed.units_detected == "inch" else 1.0
+    size_mm = [s * mult for s in parsed.outline_size_mm]
+
+    thick = (parsed.thickness_mm * mult) if parsed.thickness_mm else 22.0
+    p_depth = (parsed.pocket_depth_mm * mult) if parsed.pocket_depth_mm else 12.0
+
+    assumptions = list(parsed.assumptions)
+    if not parsed.thickness_mm:
+        assumptions.append("Толщина не указана на эскизе; принято значение по умолчанию 22 мм.")
+    if not parsed.pocket_depth_mm:
+        assumptions.append("Глубина кармана не указана на эскизе; принято значение по умолчанию 12 мм.")
+
+    return SketchSpec(
+        rotate_deg=parsed.rotate_deg,
+        size_mm=size_mm,
+        thickness_mm=thick,
+        pocket_depth_mm=p_depth,
+        units_detected=parsed.units_detected,
+        other_features=[f.model_dump() for f in parsed.other_features],
+        transcription=[t.model_dump() for t in parsed.transcription],
+        confidence=parsed.confidence,
+        assumptions=assumptions,
+    )
+
+
+def call_deepseek_for_spec(image_path: str, api_key: Optional[str] = None) -> SketchSpec:
+    """DeepSeek-flash читает размеры и текстовые метки эскиза."""
     key = api_key or os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("MOONSHOT_API_KEY")
     if not key:
         return SketchSpec(assumptions=["DEEPSEEK_API_KEY не задан; использованы размеры по умолчанию."])
 
-    import base64
     from openai import OpenAI
 
-    mime = mimetypes.guess_type(image_path)[0] or "image/jpeg"
-    with open(image_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-
+    mime, b64 = _read_image_b64(image_path)
     client = OpenAI(api_key=key, base_url="https://api.deepseek.com")
 
     messages = [
@@ -834,37 +877,11 @@ def call_llm_for_spec(image_path: str, api_key: Optional[str] = None) -> SketchS
             messages=messages,
         )
         content = resp.choices[0].message.content.strip()
-        content = re.sub(r"^```[a-zA-Z]*\s*", "", content)
-        content = re.sub(r"\s*```$", "", content)
-
+        if getattr(resp, "usage", None):
+            u = resp.usage
+            print(f"   [DeepSeek] токены: prompt={u.prompt_tokens}, completion={u.completion_tokens}, всего={u.total_tokens}")
         try:
-            data = json.loads(content)
-            parsed = LLMSketchSpec.model_validate(data)
-
-            # Перевод дюймов в мм если нужно
-            mult = 25.4 if parsed.units_detected == "inch" else 1.0
-            size_mm = [s * mult for s in parsed.outline_size_mm]
-
-            thick = (parsed.thickness_mm * mult) if parsed.thickness_mm else 22.0
-            p_depth = (parsed.pocket_depth_mm * mult) if parsed.pocket_depth_mm else 12.0
-
-            assumptions = list(parsed.assumptions)
-            if not parsed.thickness_mm:
-                assumptions.append("Толщина не указана на эскизе; принято значение по умолчанию 22 мм.")
-            if not parsed.pocket_depth_mm:
-                assumptions.append("Глубина кармана не указана на эскизе; принято значение по умолчанию 12 мм.")
-
-            return SketchSpec(
-                rotate_deg=parsed.rotate_deg,
-                size_mm=size_mm,
-                thickness_mm=thick,
-                pocket_depth_mm=p_depth,
-                units_detected=parsed.units_detected,
-                other_features=[f.model_dump() for f in parsed.other_features],
-                transcription=[t.model_dump() for t in parsed.transcription],
-                confidence=parsed.confidence,
-                assumptions=assumptions,
-            )
+            return _spec_from_content(content)
         except Exception as err:
             if attempt == 0:
                 messages.append({"role": "assistant", "content": content})
@@ -876,6 +893,62 @@ def call_llm_for_spec(image_path: str, api_key: Optional[str] = None) -> SketchS
                 return SketchSpec(assumptions=[f"Ошибка валидации ответа LLM ({err}); применены параметры по умолчанию."])
 
     return SketchSpec(assumptions=["Не удалось получить валидный JSON от LLM; применены параметры по умолчанию."])
+
+
+def call_ollama_for_spec(image_path: str) -> SketchSpec:
+    """Локальная vision-модель (Ollama) читает размеры эскиза. Бросает исключение при сбое."""
+    import urllib.request
+
+    mime, b64 = _read_image_b64(image_path)
+    payload = {
+        "model": OLLAMA_VISION_MODEL,
+        "messages": [
+            {"role": "system", "content": LLM_SYSTEM_PROMPT},
+            {"role": "user", "content": "Extract sketch dimensions and orientation as JSON.",
+             "images": [b64]},
+        ],
+        "stream": False,
+        "format": "json",
+        "options": {"temperature": 0.0},
+    }
+    req = urllib.request.Request(
+        f"{OLLAMA_HOST}/api/chat",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        result = json.loads(resp.read())
+    pc, ec = result.get("prompt_eval_count"), result.get("eval_count")
+    print(f"   [Ollama {OLLAMA_VISION_MODEL}] токены: prompt={pc}, completion={ec}, всего={(pc or 0) + (ec or 0)}")
+    content = result["message"]["content"].strip()
+    return _spec_from_content(content)
+
+
+def call_llm_for_spec(image_path: str, api_key: Optional[str] = None,
+                      backend: str = "auto") -> SketchSpec:
+    """Чтение размеров эскиза: локальная vision-модель и/или DeepSeek.
+
+    backend: "auto" (Ollama, при неудаче — DeepSeek), "ollama", "deepseek".
+    """
+    if backend == "deepseek":
+        return call_deepseek_for_spec(image_path, api_key)
+
+    if backend == "ollama":
+        try:
+            return call_ollama_for_spec(image_path)
+        except Exception as e:
+            return SketchSpec(assumptions=[f"Локальная vision-модель недоступна ({e}); применены параметры по умолчанию."])
+
+    # auto: сначала локальная модель, fallback на DeepSeek
+    try:
+        return call_ollama_for_spec(image_path)
+    except Exception as e:
+        key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("MOONSHOT_API_KEY")
+        if key:
+            print(f"   Внимание: локальная vision-модель недоступна ({e}); пробую DeepSeek...")
+            return call_deepseek_for_spec(image_path, api_key)
+        return SketchSpec(assumptions=[f"Локальная vision-модель недоступна ({e}), ключ DeepSeek не задан; параметры по умолчанию."])
 
 
 # =============================================================================
@@ -1021,6 +1094,8 @@ def parse_args(argv=None):
     parser.add_argument("--threshold", choices=["otsu", "adaptive"], default="otsu", help="Метод бинаризации")
     parser.add_argument("--out", default="out", help="Каталог для выходных файлов (trace.json, debug.png, board.scad)")
     parser.add_argument("--debug", action="store_true", help="Печать подробностей и запись промежуточных масок")
+    parser.add_argument("--llm", choices=["auto", "ollama", "deepseek"], default="auto",
+                        help="Источник чтения размеров: auto (локальная Ollama → DeepSeek), ollama, deepseek")
     return parser.parse_args(argv)
 
 
@@ -1032,10 +1107,10 @@ def main(argv=None):
     flags_complete = (args.size is not None and args.thickness is not None and
                       args.pocket_depth is not None and args.rotate is not None)
 
-    if not flags_complete and (os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("MOONSHOT_API_KEY")):
-        print(f"-> Запрос к DeepSeek-flash для чтения надписей и размеров с {args.image}...")
+    if not flags_complete:
+        print(f"-> Чтение размеров эскиза (backend={args.llm}) с {args.image}...")
         try:
-            spec = call_llm_for_spec(args.image)
+            spec = call_llm_for_spec(args.image, backend=args.llm)
             print(f"   LLM ответил: поворот {spec.rotate_deg}°, габариты {spec.size_mm} мм, единицы {spec.units_detected}")
         except Exception as e:
             print(f"   Внимание: ошибка вызова LLM ({e}), используем значения по умолчанию.")

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
 AI Task Dispatcher — woodworking project
-Роли по AGENT.md:
-  - Ollama (qwen3-coder:30b): рутинные задачи, бесплатно
-  - DeepSeek (deepseek-flash / deepseek-v4-pro): проверка, сложные задачи, платно
-  - Antigravity: диспетчер (ты)
+Роли по AGENT.md (Ollama ПО МАКСИМУМУ, DeepSeek — контроль):
+  - Ollama (qwen3-coder:30b): по умолчанию для всего, бесплатно
+  - DeepSeek (deepseek-flash / deepseek-v4-pro): fallback при сбое Ollama, проверка, сложное — платно
+  - Antigravity: диспетчер (контроль и архитектура)
 
 Использование:
-  python dispatcher.py "задача"              # авто-маршрут
+  python dispatcher.py "задача"              # Ollama; при сбое → DeepSeek
   python dispatcher.py "задача" --ollama     # принудительно в Ollama
   python dispatcher.py "задача" --deepseek   # принудительно в DeepSeek
+  python dispatcher.py "задача" --strong     # принудительно DeepSeek v4-pro
   python dispatcher.py "задача" --verify     # Ollama → проверка DeepSeek
 """
 
@@ -48,7 +49,7 @@ DEEPSEEK_HOST    = "https://api.deepseek.com"
 DEEPSEEK_CHEAP   = "deepseek-flash"    # для проверки
 DEEPSEEK_STRONG  = "deepseek-v4-pro"  # для сложных задач
 
-# Слова-маркеры сложной задачи → сразу DeepSeek
+# Слова-маркеры сложной задачи → сильная модель DeepSeek (когда DeepSeek уже выбран)
 COMPLEX_KEYWORDS = [
     "архитектур", "рефактор", "новый модуль", "совместимост",
     "интерфейс", "дизайн", "ошибка непонятна", "не работает",
@@ -76,6 +77,9 @@ def ask_ollama(prompt: str, system: str = "") -> str:
     print(f"[Ollama → {OLLAMA_MODEL}] отправляю...", flush=True)
     result = _post(f"{OLLAMA_HOST}/api/chat",
                    {"model": OLLAMA_MODEL, "messages": messages, "stream": False})
+    pc, ec = result.get("prompt_eval_count"), result.get("eval_count")
+    if pc is not None or ec is not None:
+        print(f"[Ollama] токены: prompt={pc}, completion={ec}, всего={(pc or 0) + (ec or 0)}", flush=True)
     return result["message"]["content"]
 
 # ── DeepSeek ─────────────────────────────────────────────────────────────────
@@ -89,6 +93,8 @@ def ask_deepseek(prompt: str, system: str = "", model: str = DEEPSEEK_CHEAP) -> 
     result = _post(f"{DEEPSEEK_HOST}/v1/chat/completions",
                    {"model": model, "messages": messages},
                    headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"})
+    u = result.get("usage") or {}
+    print(f"[DeepSeek {model}] токены: prompt={u.get('prompt_tokens')}, completion={u.get('completion_tokens')}, всего={u.get('total_tokens')}", flush=True)
     return result["choices"][0]["message"]["content"]
 
 # ── Маршрутизатор ────────────────────────────────────────────────────────────
@@ -101,10 +107,8 @@ def dispatch(task: str, force=None, verify: bool = False) -> None:
     print(f"ЗАДАЧА: {textwrap.shorten(task, 120)}")
     print(f"{'='*60}\n")
 
-    if force == "ollama" or (force is None and not is_complex(task)):
-        route = "ollama"
-    else:
-        route = "deepseek"
+    # Ollama по умолчанию; DeepSeek — только явно (--deepseek/--strong) или при неудаче Ollama.
+    route = "deepseek" if force == "deepseek" else "ollama"
 
     system = (
         "Ты — помощник в проекте деревообработки (boardcam). "
@@ -112,7 +116,13 @@ def dispatch(task: str, force=None, verify: bool = False) -> None:
     )
 
     if route == "ollama":
-        answer = ask_ollama(task, system)
+        try:
+            answer = ask_ollama(task, system)
+        except Exception as e:
+            print(f"[Ollama недоступна: {e}] → переключаюсь на DeepSeek")
+            route = "deepseek"
+
+    if route == "ollama":
         print(f"\n── Ответ Ollama ──────────────────────────────────────────")
         print(answer)
 
@@ -127,7 +137,7 @@ def dispatch(task: str, force=None, verify: bool = False) -> None:
             verdict = ask_deepseek(verify_prompt, model=DEEPSEEK_CHEAP)
             print(verdict)
 
-    else:  # deepseek
+    else:  # deepseek (явный выбор или fallback после неудачи Ollama)
         model = DEEPSEEK_STRONG if is_complex(task) else DEEPSEEK_CHEAP
         answer = ask_deepseek(task, system, model=model)
         print(f"\n── Ответ DeepSeek ({model}) ──────────────────────────────")
@@ -144,7 +154,7 @@ def main():
     parser.add_argument("--verify",   action="store_true",
                         help="Ollama выполняет, DeepSeek проверяет")
     parser.add_argument("--strong",   action="store_true",
-                        help="DeepSeek v4-pro вместо flash")
+                        help="Принудительно DeepSeek v4-pro")
     args = parser.parse_args()
 
     task = args.task or sys.stdin.read().strip()
@@ -155,7 +165,10 @@ def main():
     force = None
     if args.ollama:   force = "ollama"
     if args.deepseek: force = "deepseek"
-    if args.strong:   global DEEPSEEK_CHEAP; DEEPSEEK_CHEAP = DEEPSEEK_STRONG
+    if args.strong:
+        force = "deepseek"
+        global DEEPSEEK_CHEAP
+        DEEPSEEK_CHEAP = DEEPSEEK_STRONG
 
     dispatch(task, force=force, verify=args.verify)
 
